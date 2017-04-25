@@ -1,0 +1,6 @@
+print ("Hello world!")
+age = 3
+if age < 18:
+	print("yee")
+else:
+	print("nyee")

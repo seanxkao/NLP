@@ -1,0 +1,49 @@
+﻿#encoding=utf-8
+import sys
+import re
+import jieba
+import jieba.posseg as pseg
+
+jieba.set_dictionary('dict.txt.big')
+#jieba.load_userdict('../data/NTUSD_pos.txt')
+#jieba.load_userdict('../data/NTUSD_neg.txt')
+
+fileIn = open('../data/aspect_review2.txt', 'r', encoding='UTF-8')
+sys.stdout = open('output.txt', 'w', encoding='UTF-8')
+allwords = {}
+while True:
+	line1 = fileIn.readline()
+	line2 = fileIn.readline()
+	line3 = fileIn.readline()
+	line4 = fileIn.readline()
+	if not line4:
+		break;
+	#poswords = line3.split(' \t\n')
+	#negwords = line4.split(' \t\n')
+	poswords = re.split(' \t\n', line3)
+	negwords = re.split(' \t\n', line4)
+	for posword in poswords:
+		print(posword)
+	for negword in negwords:
+		print(negword)
+	#start
+	pat = ',.!?，。！？'
+	sentences = re.split(pat, line2)
+	print('eval '+line1)
+	for sentence in sentences:
+		print('\tsentence ' + sentence)
+		words = pseg.cut(sentence)
+		for word, flag in words:
+			if flag is 'a':
+				if not word in allwords.keys():
+					allwords[word]=[]
+				else:				
+					for posword in poswords:
+						allwords[word].append(posword)	
+					for negword in negwords:
+						allwords[word].append(negword)	
+			print('\t\t', word, flag)
+print('All words:')
+for word, count in allwords.items():
+	print(word, count)
+	

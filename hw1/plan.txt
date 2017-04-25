@@ -1,0 +1,24 @@
+µû»ù
+
+Eval
+{
+	Sentence[]{
+		Word[]{
+			tag;
+			str;
+			type;	//0: normal, 1: aspect, 2: modifier
+		}
+	}
+	polarity[]{
+		aspect;
+		score;
+	}
+}
+
+flow:
+
+segmentation
+POS tagging
+aspect-modifier matching
+find more
+eval
