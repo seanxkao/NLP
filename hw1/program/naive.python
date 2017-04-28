@@ -1,0 +1,157 @@
+#encoding=utf-8
+import sys
+import re
+import jieba
+import jieba.posseg as pseg
+
+jieba.set_dictionary('dict.txt.big')
+
+aspects = {'服务', '环境', '价格', '交通', '餐厅'}
+
+sys.stdout = open('output.txt', 'w', encoding='UTF-8')
+
+class AspectScore:
+	def __init__(self):
+		self.value = {}
+		self.sum = {}
+		self.weight = {}
+		for aspect in aspects:
+			self.value[aspect] = 0
+			self.sum[aspect] = 0
+			self.weight[aspect] = 0
+	def addValue(self, aspect):
+		self.value[aspect] += 1
+		self.sum[aspect] += 1
+	def addSum(self, aspect):
+		self.sum[aspect] += 1
+	def eval(self, aspect, offset=0):
+		if self.sum[aspect] is 0:
+			self.weight[aspect] = 0
+		else:
+			self.weight[aspect] = self.value[aspect]/self.sum[aspect] - offset
+
+class EvalScore:
+	def __init__(self):
+		self.value = {}
+		self.sum = {}
+		self.weight = {}
+		for aspect in aspects:
+			self.value[aspect] = 0
+			self.sum[aspect] = 0
+			self.weight[aspect] = 0
+	def addValue(self, aspect, value):
+		self.value[aspect] += value
+		self.sum[aspect] += 1
+	def addSum(self, aspect):
+		self.sum[aspect] += 1
+	def eval(self, aspect):
+		if self.sum[aspect] is 0:
+			self.weight[aspect] = 0
+		else:
+			self.weight[aspect] = self.value[aspect]/self.sum[aspect]
+	def score(self, aspect):
+		if self.value[aspect] > 0.5:
+			return 1
+		elif self.value[aspect] < -0.5:
+			return -1
+		else:
+			return 0
+class Evaluation:
+	def __init__(self, id, content, poswords, negwords):
+		self.id = id
+		self.content = content
+		self.poswords = poswords[:]
+		self.negwords = negwords[:]
+		items = pseg.cut(content)
+		self.words, self.tags = zip(*items)
+	def __len__(self):
+		return len(self.words)
+
+aspectScores = {}
+avgAspectScore = AspectScore()
+traningEvaluations = []
+		
+fileAspect = open('../data/aspect_review2.txt', 'r', encoding='UTF-8')
+while True:
+	id = fileAspect.readline()
+	content = fileAspect.readline()
+	poswords = fileAspect.readline()
+	negwords = fileAspect.readline()
+	if not negwords:
+		break;
+	#process intput data
+	id = id.rstrip()
+	id = int(id)
+	content = content.rstrip()
+	poswords = re.split('[ \t\n]', poswords)
+	negwords = re.split('[ \t\n]', negwords)
+	poswords = list(filter(None, poswords))
+	negwords = list(filter(None, negwords))
+	#start
+	eva = Evaluation(id, content, poswords, negwords)
+	print(content)
+	for i in range(0, len(eva)):
+		word1 = eva.words[i]
+		tag1 = eva.tags[i]
+		print(word1, tag1)
+		if tag1 is 'a':
+			if not word1 in aspectScores.keys():
+				aspectScores[word1] = AspectScore()	
+			for posword in eva.poswords:
+				aspectScores[word1].addValue(posword)
+				avgAspectScore.addValue(posword)	
+			for negword in eva.negwords:
+				aspectScores[word1].addSum(negword)
+				avgAspectScore.addSum(negword)
+	traningEvaluations.append(eva)
+
+print('avg')
+for aspect in aspects:
+	avgAspectScore.eval(aspect)
+	print('\t'+aspect, avgAspectScore.weight[aspect])
+for word, aspectScore in aspectScores.items():
+	print(word)
+	for aspect in aspects:
+		aspectScore.eval(aspect, avgAspectScore.weight[aspect])
+		print('\t'+aspect, aspectScore.value[aspect], aspectScore.sum[aspect], aspectScore.weight[aspect])
+
+evalScores = {}
+testEvaluations = []
+fileTest = open('../data/test_review2.txt', 'r', encoding='UTF-8')
+while True:
+	id = fileTest.readline()
+	content = fileTest.readline()
+	if not content:
+		break;
+	#process intput data
+	id = id.rstrip()
+	id = int(id)
+	content = content.rstrip()
+	#start
+	eva = Evaluation(id, content, [], [])
+	evalScores[id] = EvalScore()
+	print(content)
+	for i in range(0, len(eva)):
+		word1 = eva.words[i]
+		tag1 = eva.tags[i]
+		print(word1, tag1)
+		if tag1 is 'a':
+			if word1 in aspectScores.keys():
+				for aspect in aspects:
+					evalScores[id].addValue(aspect, aspectScores[word1].weight[aspect])
+					
+fileQuestion = open('../data/test2.csv', 'r', encoding='UTF-8')
+fileAnswer = open('../data/answer.csv', 'w', encoding='UTF-8')
+
+fileQuestion.readline()
+print('Id,Label', file=fileAnswer)
+while True:
+	line = fileQuestion.readline()
+	if not line:
+		break;
+	line = re.split('[,\n]', line)
+	counter = line[0]
+	id = int(line[1])
+	aspect = line[2]
+	print(str(counter) + ',' + str(evalScores[id].score(aspect)), file=fileAnswer)
+	
