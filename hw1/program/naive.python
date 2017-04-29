@@ -71,9 +71,9 @@ class EvalScore:
 		else:
 			self.weight[aspect] = self.value[aspect]/self.sum[aspect]
 	def score(self, aspect):
-		if self.value[aspect] > 0.5:
+		if self.value[aspect] > 0.4:
 			return 1
-		elif self.value[aspect] < -0.5:
+		elif self.value[aspect] < -0.4:
 			return -1
 		else:
 			return 0
@@ -88,11 +88,11 @@ class Evaluation:
 	def __len__(self):
 		return len(self.words)
 	def isPositive(self, aspect):
-		return aspect in poswords
+		return aspect in self.poswords
 	def isNegative(self, aspect):
-		return aspect in negwords
+		return aspect in self.negwords
 	def isNeutral(self, aspect):
-		return not aspect in poswords and not aspect in negwords
+		return aspect not in self.poswords and aspect not in self.negwords
 		
 distance = 3
 aspectScores = {}
@@ -175,46 +175,37 @@ for word, termScore in termScores.items():
 		print('\t'+aspect, termScore.value[aspect], termScore.sum[aspect], termScore.weight[aspect])
 
 #training
+for t in range(0, 200):
+	for eva in trainingEvaluations:
+		testScore = EvalScore()
+		adjs = []
+		for i in range(0, len(eva)):
+			word1 = eva.words[i]
+			tag1 = eva.tags[i]
+			if word1 in aspectScores.keys():
+				adjs.append(word1)
+				for aspect in aspects:
+					testScore.addValue(aspect, aspectScores[word1].weight[aspect])
+		adjs = list(set(adjs))
+		for aspect in aspects:
+			if eva.isNeutral(aspect):
+				for adj in adjs:
+					#print(adj, aspect, aspectScores[adj].weight[aspect], '->', aspectScores[adj].weight[aspect]*0.8)
+					aspectScores[adj].weight[aspect] *= 0.95
+					
+			elif eva.isPositive(aspect):
+				for adj in adjs:
+					weight = aspectScores[adj].weight[aspect]
+					error = 0.1
+					aspectScores[adj].weight[aspect] = weight * (1-error) + error
+					#print(adj, aspect, weight, '->', aspectScores[adj].weight[aspect])
+			else:
+				for adj in adjs:
+					weight = aspectScores[adj].weight[aspect]
+					error = 0.1
+					aspectScores[adj].weight[aspect] = weight * (1-error) - error
+					#print(adj, aspect, weight, '->', aspectScores[adj].weight[aspect])
 #for t in range(0, 100):
-for eva in trainingEvaluations:
-	testScore = EvalScore()
-	adjs = []
-	for i in range(0, len(eva)):
-		word1 = eva.words[i]
-		tag1 = eva.tags[i]
-		if word1 in aspectScores.keys():
-			adjs.append(word1)
-			for aspect in aspects:
-				testScore.addValue(aspect, aspectScores[word1].weight[aspect])
-	adjs = list(set(adjs))
-	for aspect in aspects:
-		if eva.isNeutral(aspect):
-			for adj in adjs:
-				#print(adj, aspect, aspectScores[adj].weight[aspect], '->', aspectScores[adj].weight[aspect]*0.8)
-				aspectScores[adj].weight[aspect] *= 0.8	
-		'''
-		if eva.isPositive(aspect):
-			for adj in adjs:
-				weight = aspectScores[adj].weight[aspect]
-				error = 0
-				if weight < -0.2:
-					error = 0.08
-				elif  weight > 0.2:
-					error = 0.04
-				aspectScores[adj].weight[aspect] = weight * (1-error) + error
-				#print(adj, aspect, weight, '->', aspectScores[adj].weight[aspect])
-		if eva.isNegative(aspect):
-			for adj in adjs:
-				weight = aspectScores[adj].weight[aspect]
-				error = 0
-				if weight < -0.2:
-					error = 0.04
-				elif  weight > 0.2:
-					error = 0.08
-				aspectScores[adj].weight[aspect] = weight * (1-error) - error
-				#print(adj, aspect, weight, '->', aspectScores[adj].weight[aspect])
-		'''
-for t in range(0, 100):
 	for eva in trainingEvaluations:
 		testScore = EvalScore()
 		terms = []
@@ -245,9 +236,7 @@ for t in range(0, 100):
 					termScores[term].weight[aspect] *= 0.8	
 				else:
 					weight = termScores[term].weight[aspect]
-					error = 0
-					if weight < 0.2:
-						error = 0.08
+					error = 0.1
 					termScores[term].weight[aspect] = weight * (1-error) + error
 		
 		
