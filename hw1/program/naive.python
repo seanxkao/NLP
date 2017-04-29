@@ -7,7 +7,6 @@ import jieba.posseg as pseg
 jieba.set_dictionary('dict.txt.big')
 
 aspects = {'服务', '环境', '价格', '交通', '餐厅'}
-
 sys.stdout = open('output.txt', 'w', encoding='UTF-8')
 
 class AspectScore:
@@ -30,6 +29,28 @@ class AspectScore:
 		else:
 			self.weight[aspect] = self.value[aspect]/self.sum[aspect] - offset
 
+class TermScore(AspectScore):
+	def eval(self, aspect, offset=0):
+		if self.sum[aspect] is 0:
+			self.weight[aspect] = 0
+		else:
+			self.weight[aspect] = self.value[aspect]/self.sum[aspect] - offset
+	def maxWeight(self):
+		value = -1000
+		for aspect in aspects:
+			if self.weight[aspect] > value:
+				value = self.weight[aspect]
+		return value
+	def aspect(self):
+		value = self.maxWeight()
+		for aspect in aspects:
+			if self.weight[aspect] is value:
+				return aspect
+	def score(self, aspect):
+		if aspect is self.aspect() and self.weight[aspect] > 0.2:
+			return 1
+		else:
+			return 0
 class EvalScore:
 	def __init__(self):
 		self.value = {}
@@ -66,10 +87,19 @@ class Evaluation:
 		self.words, self.tags = zip(*items)
 	def __len__(self):
 		return len(self.words)
-
+	def isPositive(self, aspect):
+		return aspect in poswords
+	def isNegative(self, aspect):
+		return aspect in negwords
+	def isNeutral(self, aspect):
+		return not aspect in poswords and not aspect in negwords
+		
+distance = 3
 aspectScores = {}
 avgAspectScore = AspectScore()
-traningEvaluations = []
+termScores = {}
+avgTermScore = TermScore()
+trainingEvaluations = []
 		
 fileAspect = open('../data/aspect_review2.txt', 'r', encoding='UTF-8')
 while True:
@@ -89,7 +119,10 @@ while True:
 	negwords = list(filter(None, negwords))
 	#start
 	eva = Evaluation(id, content, poswords, negwords)
-	print(content)
+	trainingEvaluations.append(eva)
+	
+for eva in trainingEvaluations:
+	print(eva.content)
 	for i in range(0, len(eva)):
 		word1 = eva.words[i]
 		tag1 = eva.tags[i]
@@ -103,9 +136,25 @@ while True:
 			for negword in eva.negwords:
 				aspectScores[word1].addSum(negword)
 				avgAspectScore.addSum(negword)
-	traningEvaluations.append(eva)
-
-print('avg')
+			begin = i-distance if i-distance>=0 else 0
+			end = i+distance if i+distance < len(eva) else len(eva)-1
+			for j in range(begin, end):
+				if not j is i:
+					word2 = eva.words[j]
+					tag2 = eva.tags[j]
+					if tag2 is 'n' or tag2 is 'vn':
+						if not word2 in termScores.keys():
+							termScores[word2] = TermScore()
+						for aspect in aspects:
+							if aspect in eva.poswords or aspect in eva.negwords:
+								termScores[word2].addValue(aspect)
+								avgTermScore.addValue(aspect)
+							else:
+								termScores[word2].addSum(aspect)
+								avgTermScore.addSum(aspect)
+							
+	
+print('avg aspect')
 for aspect in aspects:
 	avgAspectScore.eval(aspect)
 	print('\t'+aspect, avgAspectScore.weight[aspect])
@@ -114,6 +163,106 @@ for word, aspectScore in aspectScores.items():
 	for aspect in aspects:
 		aspectScore.eval(aspect, avgAspectScore.weight[aspect])
 		print('\t'+aspect, aspectScore.value[aspect], aspectScore.sum[aspect], aspectScore.weight[aspect])
+
+print('avg term')
+for aspect in aspects:
+	avgTermScore.eval(aspect)
+	print('\t'+aspect, avgTermScore.weight[aspect])
+for word, termScore in termScores.items():
+	print(word)
+	for aspect in aspects:
+		termScore.eval(aspect, avgTermScore.weight[aspect])
+		print('\t'+aspect, termScore.value[aspect], termScore.sum[aspect], termScore.weight[aspect])
+
+#training
+#for t in range(0, 100):
+for eva in trainingEvaluations:
+	testScore = EvalScore()
+	adjs = []
+	for i in range(0, len(eva)):
+		word1 = eva.words[i]
+		tag1 = eva.tags[i]
+		if word1 in aspectScores.keys():
+			adjs.append(word1)
+			for aspect in aspects:
+				testScore.addValue(aspect, aspectScores[word1].weight[aspect])
+	adjs = list(set(adjs))
+	for aspect in aspects:
+		if eva.isNeutral(aspect):
+			for adj in adjs:
+				#print(adj, aspect, aspectScores[adj].weight[aspect], '->', aspectScores[adj].weight[aspect]*0.8)
+				aspectScores[adj].weight[aspect] *= 0.8	
+		'''
+		if eva.isPositive(aspect):
+			for adj in adjs:
+				weight = aspectScores[adj].weight[aspect]
+				error = 0
+				if weight < -0.2:
+					error = 0.08
+				elif  weight > 0.2:
+					error = 0.04
+				aspectScores[adj].weight[aspect] = weight * (1-error) + error
+				#print(adj, aspect, weight, '->', aspectScores[adj].weight[aspect])
+		if eva.isNegative(aspect):
+			for adj in adjs:
+				weight = aspectScores[adj].weight[aspect]
+				error = 0
+				if weight < -0.2:
+					error = 0.04
+				elif  weight > 0.2:
+					error = 0.08
+				aspectScores[adj].weight[aspect] = weight * (1-error) - error
+				#print(adj, aspect, weight, '->', aspectScores[adj].weight[aspect])
+		'''
+for t in range(0, 100):
+	for eva in trainingEvaluations:
+		testScore = EvalScore()
+		terms = []
+		for i in range(0, len(eva)):
+			word1 = eva.words[i]
+			if word1 in aspectScores.keys():
+				begin = i-distance if i-distance>=0 else 0
+				end = i+distance if i+distance < len(eva) else len(eva)-1
+				maxTerm = ''
+				for j in range(begin, end):
+					word2 = eva.words[j]
+					if not j is i and word2 in termScores.keys():
+						if(maxTerm is '' or termScores[word2].maxWeight()>termScores[maxTerm].maxWeight()):
+							maxTerm = word2
+						break;
+				if not maxTerm is '':
+					terms.append(maxTerm)
+					aspect = termScores[word2].aspect()
+					testScore.addValue(aspect, aspectScores[word1].weight[aspect])
+				else:
+					for aspect in aspects:
+						testScore.addValue(aspect, aspectScores[word1].weight[aspect])
+		
+		terms = list(set(terms))
+		for term in terms:
+			for aspect in aspects:
+				if eva.isNeutral(aspect):
+					termScores[term].weight[aspect] *= 0.8	
+				else:
+					weight = termScores[term].weight[aspect]
+					error = 0
+					if weight < 0.2:
+						error = 0.08
+					termScores[term].weight[aspect] = weight * (1-error) + error
+		
+		
+print("Traning result:")
+for word, aspectScore in aspectScores.items():
+	print(word)
+	for aspect in aspects:
+		print('\t'+aspect, aspectScore.weight[aspect])
+
+print("Traning result:")
+for word, termScore in termScores.items():
+	print(word)
+	for aspect in aspects:
+		print('\t'+aspect, termScore.score(aspect))
+
 
 evalScores = {}
 testEvaluations = []
@@ -134,11 +283,25 @@ while True:
 	for i in range(0, len(eva)):
 		word1 = eva.words[i]
 		tag1 = eva.tags[i]
-		print(word1, tag1)
 		if tag1 is 'a':
 			if word1 in aspectScores.keys():
-				for aspect in aspects:
+				begin = i-distance if i-distance>=0 else 0
+				end = i+distance if i+distance < len(eva) else len(eva)-1
+				maxTerm = ''
+				for j in range(begin, end):
+					word2 = eva.words[j]
+					if not j is i and word2 in termScores.keys():
+						if(maxTerm is '' or termScores[word2].maxWeight()>termScores[maxTerm].maxWeight()):
+							maxTerm = word2
+						break;
+				if not maxTerm is '':
+					aspect = termScores[word2].aspect()
 					evalScores[id].addValue(aspect, aspectScores[word1].weight[aspect])
+				else:
+					for aspect in aspects:
+						evalScores[id].addValue(aspect, aspectScores[word1].weight[aspect])
+	for aspect in aspects:
+		print(aspect, evalScores[id].score(aspect))
 					
 fileQuestion = open('../data/test2.csv', 'r', encoding='UTF-8')
 fileAnswer = open('../data/answer.csv', 'w', encoding='UTF-8')
